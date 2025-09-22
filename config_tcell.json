@@ -1,0 +1,12 @@
+{
+    "growth_file": "data/growth_data_scaled.csv",
+    "t_init": 0.001,
+    "t_incr_size": 2.6,
+    "dt": 0.01,
+    "cutoff_0": 0.001,
+    "error_type": "MSE",
+    "g1": 0.135,
+    "g11": 0.107,
+    "km_intercept": 0.0086,
+    "km_slope": -0.7051
+}
