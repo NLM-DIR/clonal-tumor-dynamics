@@ -118,6 +118,6 @@ Data files needed to reproduce our results are included in the data/ folder. Thi
 - `VAF_medians`: The medians of the VAF measurements (used for Figure 2b and 4b)
 - `VAF/{Group ID}_VAF.csv`: The VAF measurements for that Group ID.
 
-Each of these files can also be found in the Supplementary Material of the publication.
+This data can also be found in the Supplementary Material of the publication.
 
 ## Citation
