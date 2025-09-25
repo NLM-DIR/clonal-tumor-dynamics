@@ -4,7 +4,7 @@ import argparse
 import time
 
 ##########
-# This script estimates the growth rates of the experiments with 100% proliferative or 100% invasive subclones.
+# This script estimates the exponential growth rates of all experiments.
 # It uses a configuration file that includes the details for the estimations.
 # User input defines the range and increment of values to try.
 ##########
@@ -19,33 +19,42 @@ def main(config, g_range, g_incr, save_path):
     print("Number of grid elements:", len(np.arange(g_range[0], g_range[1], g_incr)), flush=True)
 
     # Get C1 (proliferative) growth rate
-    print("C1 (proliferative)")
-    start_time = time.time()
-    results = es.all_mice_nude_pure("Grp. B1 nude (100% C1)", g_range, g_incr)
-    print("Time:", time.time() - start_time)
+    # print("C1 (proliferative)")
+    # start_time = time.time()
+    # results = es.all_mice_nude_pure("Grp. B1 nude (100% C1)", g_range, g_incr)
+    # print("Time:", time.time() - start_time)
     
     # Save results
-    results.to_csv("{}C1_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
-    print(results)
+    # results.to_csv("{}C1_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
+    # print(results)
 
     # Get C11 (invasive) growth rate
-    print("C11 (invasive)")
-    start_time = time.time()
-    results = es.all_mice_nude_pure("Grp. B5 nude (100% C11)", g_range, g_incr)
-    print("Time:", time.time() - start_time)
+    # print("C11 (invasive)")
+    # start_time = time.time()
+    # results = es.all_mice_nude_pure("Grp. B5 nude (100% C11)", g_range, g_incr)
+    # print("Time:", time.time() - start_time)
 
     # Save results
-    results.to_csv("{}C11_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
-    print(results)
+    # results.to_csv("{}C11_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
+    # print(results)
 
     # Get the admixture total tumor growth rates
-    print("Admixtures")
+    # print("Admixtures")
+    # start_time = time.time()
+    # results = es.all_admix_nude_growth(g_range, g_incr)
+    # print("Time:", time.time() - start_time)
+
+    # Save results
+    # results.to_csv("{}admix_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
+
+    # Get the B6 mouse total tumor growth rates
+    print("B6 mice")
     start_time = time.time()
-    results = es.all_admix_nude_growth(g_range, g_incr)
+    results = es.all_b6_growth(g_range, g_incr)
     print("Time:", time.time() - start_time)
 
     # Save results
-    results.to_csv("{}admix_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
+    results.to_csv("{}b6_g_{}_{}_{}.csv".format(save_path, g_range[0], g_range[1], g_incr), index=False)
 
 
 if __name__ == "__main__":
