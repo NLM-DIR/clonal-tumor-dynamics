@@ -104,7 +104,7 @@ Note that the JSON format does not have an option for comments.
 - Figure 5:
     - 5a: Created in Illustrator
     - 5b: `Figure_5b.ipynb`
-- Figure 6: `Figure_3e_6.ipynb`
+- Figure 6: `Figure_6.ipynb` (must first run `Figure_6_helper.py`)
 - Figure 7: `Figure_7_S3.ipynb`
 - Figure S1: `Figure_S1_S2.py`
 - Figure S2: `Figure_S1_S2.py`
@@ -119,5 +119,3 @@ Data files needed to reproduce our results are included in the data/ folder. Thi
 - `VAF/{Group ID}_VAF.csv`: The VAF measurements for that Group ID.
 
 This data can also be found in the Supplementary Material of the publication.
-
-## Citation
