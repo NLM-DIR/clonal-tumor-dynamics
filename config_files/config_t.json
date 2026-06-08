@@ -1,0 +1,10 @@
+{
+    "growth_file": "data/growth_data_df.csv",
+    "t_init": 0.01,
+    "dt": 0.01,
+    "cutoff_0_raw": 0.001,
+    "cutoff_0_percent": 0.01,
+    "max_loser_subline_percent": 0.02,
+    "km_result_file": "bests/km_10.csv",
+    "delay": 10
+}

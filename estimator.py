@@ -1,508 +1,180 @@
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error
 import json
+from itertools import product
+from src import pyxfunc
 
 ##########
-# This class contains functions to run the exhaustive searches for the parameters.
+# Class to generate and get errors of simulated curves.
+# Takes as input a configuration file. Configuration files used are in config_files/.
 ##########
 
 class Estimator():
-    ##########
-    # Intialize class variables from config file
-    ##########
     def __init__(self, config_file):
         with open(config_file, "r") as f:
             self.params = json.load(f)
         self.growth_df = pd.read_csv(self.params["growth_file"])
-        if "g1" in self.params.keys(): self.g1 = self.params["g1"]
-        if "g11" in self.params.keys(): self.g11 = self.params["g11"]
-        if "km_intercept" in self.params.keys(): self.km_intercept = self.params["km_intercept"]
-        if "km_slope" in self.params.keys(): self.km_slope = self.params["km_slope"]
-        self.t_init = self.params["t_init"]
-        self.t_incr_size =  self.params["t_incr_size"]
+        if "t_init" in self.params.keys(): self.t_init = self.params["t_init"]
+        else: self.t_init = 0
         self.dt = self.params["dt"]
-        self.cutoff_0 =  self.params["cutoff_0"]
-        self.error_type =  self.params["error_type"]
+        self.cutoff_0_raw =  self.params["cutoff_0_raw"]
+        self.cutoff_0_percent = self.params["cutoff_0_percent"]
+        if "max_loser_subline_percent" in self.params.keys(): self.max_loser_subline_percent = self.params["max_loser_subline_percent"]
+        if "delay" in self.params.keys(): self.delay = self.params["delay"]
+        exclude = [456, 458, 461, 464, 471, 474, 478, 482, 483, 426, 428, 429, 430, 434, 437, 438, 442, 443, 451, 642, 662]
+        self.growth_df = self.growth_df[~(self.growth_df["id"].isin(exclude))]
 
-    ##########
-    # Helper function to get the ratio of the sublines given the group name
-    # @param Group name
-    # @return List containing (in order), the fraction of C1, the fraction of C11, and the initial T cell population as dictated by the config file.
-    ##########
-    def get_init(self, group):
-        if "A1" in group: return [1.0, 0.0, self.t_init]
-        if "A2" in group: return [0.8, 0.2, self.t_init]
-        if "A3" in group: return [0.5, 0.5, self.t_init]
-        if "A4" in group: return [0.2, 0.8, self.t_init]
-        if "A5" in group: return [0.0, 1.0, self.t_init]
-        if "B1" in group: return [1.0, 0.0, 0.0]
-        if "B2" in group: return [0.8, 0.2, 0.0]
-        if "B3" in group: return [0.5, 0.5, 0.0]
-        if "B4" in group: return [0.2, 0.8, 0.0]
-        if "B5" in group: return [0.0, 1.0, 0.0]
-    
-    ##########
-    # Get the mean squared error for the curve generated from the input parameters and a single nude mouse
-    # @param init : List with three elements, first is the ratio of C1, second is the ratio of C11, third is the initial population size of the T cells. E.g. the output of of get_init()
-    # @param g_range : A list with two elements, first is the minimum value of the growth rate to try, second is the maximum value of the growth rate to try.
-    # @param g_incr : Numeric value by which to increment the growth rate from the first value to the last value
-    # @param true_data : A numpy array with dimensions 2 by number of data points. true_data[0] should be the time over each measurement. true_data[1] should be the measurement.
-    # @param end_time : Last time.
-    # @return : Dataframe containing the mean squared error of the mouse defined by true_data and all parameter values specified by the input
-    ##########
-    def one_mouse_nude_pure(self, init, g_range, g_incr, true_data, end_time):
-        g_list = list(np.arange(g_range[0], g_range[1]+g_incr, g_incr))
-        mouse_err = np.zeros((len(g_list), 2))
-        for i in range(0, len(g_list)):
-            if init[0] == 1: # C1
-                error, _ = self.get_error(init, g_list[i], 0, 0, 0, 0, 0, 0, 1, true_data, end_time)
+    # Get the initial sizes of the sublines for the given mouse and the appropriate ratio for that group.
+    # @param group The name of the group the mouse is in to get the initial subclone ratio
+    # @param mid The id of the mouse to get the initial total tumor size
+    # @return A three element list. The first element is the size of C1, the second element is the size of C11,
+    #         the third element is the size of the T cell population.
+    def get_init(self, group, mid):
+        total_init = self.growth_df[(self.growth_df["id"]==mid) & (self.growth_df["day"]==7)]["size"].tolist()[0]
+        if "A1" in group or "1C" in group: return [total_init, 0.0, self.t_init*total_init]
+        if "A2" in group or "2C" in group: return [0.8*total_init, 0.2*total_init, self.t_init*total_init]
+        if "A3" in group or "3C" in group: return [0.5*total_init, 0.5*total_init, self.t_init*total_init]
+        if "A4" in group or "4C" in group: return [0.2*total_init, 0.8*total_init, self.t_init*total_init]
+        if "A5" in group or "5C" in group: return [0.0, total_init, self.t_init*total_init]
+        if "B1" in group: return [total_init, 0.0, 0.0]
+        if "B2" in group: return [0.8*total_init, 0.2*total_init, 0.0]
+        if "B3" in group: return [0.5*total_init, 0.5*total_init, 0.0]
+        if "B4" in group: return [0.2*total_init, 0.8*total_init, 0.0]
+        if "B5" in group: return [0.0, total_init, 0.0]
+
+    # For all mice in either B1 or B5 and all growth rates passed, get the results of fitting 
+    # the simulation to the the data.
+    # @param group The name of the group to evaluate
+    # @param grs The list of growth rates to evaluate
+    # @return A pandas dataframe with the results of each growth rate evaluation for each mouse
+    def nude_pure_group(self, group, grs):
+        group_df = self.growth_df[self.growth_df["group"] == group]
+        results = [[0]]*(len(group_df["id"].unique())*len(grs))
+        idx = 0
+        for g_idx in range(len(grs)):
+            # eq_params = g1, g11, m, k, c, a, f, b, l -- all but one of the growth rates is 0 (l=0.01 to avoid divide by zero)
+            if "B1" in group: # C1
+                eq_params = [grs[g_idx], 0, 0, 0, 0, 0, 0, 0, 0.01]
+                should_win = 0
             else: # C11
-                error, _ = self.get_error(init, 0, g_list[i], 0, 0, 0, 0, 0, 1, true_data, end_time)
-            idx = i
-            mouse_err[idx] = [g_list[i], error]
-        error_df = pd.DataFrame(mouse_err, columns=["g", "error"])
-        return error_df
-    
-    ##########
-    # Get the mean squared error for the curve generated from the input parameters and all nude pure mice
-    # @param group : Name of the group of nude mice to evaluate
-    # @param g_range : A list with two elements, first is the minimum value of the growth rate to try, second is the maximum value of the growth rate to try.
-    # @param g_incr : Numeric value by which to increment the growth rate from the first value to the last value
-    # @return : Dataframe containing the mean squared error of the mice in the input group and all parameter values specified by the input
-    ##########
-    def all_mice_nude_pure(self, group, g_range, g_incr):
-        errors = []
-        init = self.get_init(group)
-        for mid in self.growth_df[self.growth_df["group"] == group]["id"].unique():
-            print(mid, flush=True)
-            curr_mouse = self.one_mouse_nude_pure(init, g_range, g_incr,
-                                    self.growth_df[self.growth_df["id"] == mid][["day", "size"]].to_numpy().T,
-                                    self.growth_df[self.growth_df["id"] == mid]["day"].max())
-            curr_mouse["group"] = group
-            curr_mouse["id"] = mid
-            errors += [curr_mouse[["group", "id", "g", "error"]]] # Reorder columns
-        errors = pd.concat(errors, ignore_index=True)
-        return errors
-    
-    ##########
-    # Get the mean squared error for the curve generated by an exponential model from the input parameters and a single nude admixture mouse
-    # @param g_range : A list with two elements, first is the minimum value of the growth rate to try, second is the maximum value of the growth rate to try.
-    # @param g_incr : Numeric value by which to increment the growth rate from the first value to the last value
-    # @param true_data : A numpy array with dimensions 2 by number of data points. true_data[0] should be the time over each measurement. true_data[1] should be the measurement.
-    # @param end_time : Last time.
-    # @return : Dataframe containing the mean squared error of the mouse defined by true_data and an exponenential model using all parameter values specified by the input
-    ##########
-    def one_admix_nude_growth(self, g_range, g_incr, true_data, end_time):
-        g_list = list(np.arange(g_range[0], g_range[1]+g_incr, g_incr))
-        mouse_err = np.zeros((len(g_list), 2))
-        for g in range(0, len(g_list)):
-            error = self.get_error_exponential(g_list[g], true_data, end_time)
-            mouse_err[g] = [g_list[g], error]
-        error_df = pd.DataFrame(mouse_err, columns=["g", "error"])
-        return error_df
-    
-    ##########
-    # Get the mean squared error for the curve generated by an exponential model from the input parameters and a all nude admixture mice
-    # @param g_range : A list with two elements, first is the minimum value of the growth rate to try, second is the maximum value of the growth rate to try.
-    # @param g_incr : Numeric value by which to increment the growth rate from the first value to the last value
-    # @return : Dataframe containing the mean squared error of all nude admixture mice and an exponenential model using all parameter values specified by the input
-    ##########
-    def all_admix_nude_growth(self, g_range, g_incr):
-        errors = []
+                eq_params = [0, grs[g_idx], 0, 0, 0, 0, 0, 0, 0.01]
+                should_win = 1
+            for mid in group_df["id"].unique():
+                init = self.get_init(group, mid)
+                end_time = max(group_df[group_df["id"]==mid]["day"])
+
+                sol = pyxfunc.run(init[0], init[1], init[2], 7.0, end_time, np.inf, 
+                                    self.cutoff_0_raw, self.cutoff_0_percent, init[2], *eq_params)
+
+                day_idxs = [(d-7)*(1/self.dt) for d in self.growth_df[self.growth_df["id"] == mid]["day"].tolist()]
+                sizes = self.growth_df[self.growth_df["id"] == mid]["size"].tolist()
+                err_win = pyxfunc.get_error(day_idxs, sizes, sol, should_win, self.max_loser_subline_percent)
+                results[idx] = [group, mid, eq_params[0], eq_params[1], err_win[0], err_win[1]]
+                idx += 1
+        results = pd.DataFrame(results, columns=["group", "id", "g1", "g11", "error", "winner"])
+        return results
+
+    # Evaluate the passed growth rates on all mice in groups B1 and B5.
+    # @param grs The growth rates to evaluate
+    # @return A pandas dataframe with the results of evaluating the growth rates.
+    def nude_pure_all(self, grs):
+        results = []
+        for group in ["Grp. B1 nude (100% C1)", "Grp. B5 nude (100% C11)"]:
+            results += [self.nude_pure_group(group, grs)]
+        results = pd.concat(results)
+        return results
+
+    # For all mice in groups B2, B3, or B4 and all growth rates, k values, and m values, 
+    # get the results of fitting the simulation to the the data.
+    # @param group The name of the group to evaluate
+    # @param g1_list The list of C1 growth rates to evaluate
+    # @param g11_list The list of C11 growth rates to evaluate
+    # @param m_list The list of m values to evaluate
+    # @param k_list The list of k values to evaluate
+    # @return A pandas dataframe with the results of each parameter evaluation for each mouse
+    def nude_admix_group(self, group, g1_list, g11_list, m_list, k_list):
+        group_df = self.growth_df[self.growth_df["group"] == group]
+        end_time = max(group_df["day"])
+        should_win = 0 # C1 should always win nude admixes
+        results = [[0]]*len(group_df["id"].unique())*len(g1_list)*len(g11_list)*len(m_list)*len(k_list)
+        idx = 0
+        
+        for params in product(g1_list, g11_list, m_list, k_list):
+            eq_params = [*params, 0, 0, 0, 0, 0.01]
+            for mid in group_df["id"].unique():
+                init = self.get_init(group, mid)
+                sol = pyxfunc.run(init[0], init[1], init[2], 7.0, end_time, np.inf, 
+                                    self.cutoff_0_raw, self.cutoff_0_percent, init[2], *eq_params)
+                idxs = [(d-7)*(1/self.dt) for d in self.growth_df[self.growth_df["id"] == mid]["day"].tolist()]
+                sizes = self.growth_df[self.growth_df["id"] == mid]["size"].tolist()
+                err_win = pyxfunc.get_error(idxs, sizes, sol, should_win, self.max_loser_subline_percent)
+                results[idx] = [group, mid, *params, err_win[0], err_win[1]]
+                idx += 1
+        results = pd.DataFrame(results, columns=["group", "id", "g1", "g11", "m", "k", "error", "winner"])
+
+        return results
+
+
+    # Evaluate the passed growth rates on all mice in groups B2, B3, and B4.
+    # @param g1_list The list of C1 growth rates to evaluate
+    # @param g11_list The list of C11 growth rates to evaluate
+    # @param m_list The list of m values to evaluate
+    # @param k_list The list of k values to evaluate
+    # @return A pandas dataframe with the results of evaluating the parameter combinations.
+    def nude_admix_all(self, g1_list, g11_list, m_list, k_list):
+        results = []
         for group in ["Grp. B2 nude (80% C1; 20% C11)", "Grp. B3 nude (50% C1; 50% C11)", "Grp. B4 nude (20% C1; 80% C11)"]:
-            for mid in self.growth_df[self.growth_df["group"] == group]["id"].unique():
-                curr_mouse = self.one_admix_nude_growth(g_range, g_incr,
-                                                self.growth_df[self.growth_df["id"] == mid][["day", "size"]].to_numpy().T,       
-                                                self.growth_df[self.growth_df["id"] == mid]["day"].max())
-                curr_mouse["group"] = group
-                curr_mouse["id"] = mid
-                errors += [curr_mouse[["group", "id", "g", "error"]]] # Reorder columns
-        errors = pd.concat(errors, ignore_index=True)
-        return errors
-    
-    ##########
-    # Get the mean squared error for the curve generated by an exponential model from the input parameters and all B6 mice
-    # @param g_range : A list with two elements, first is the minimum value of the growth rate to try, second is the maximum value of the growth rate to try.
-    # @param g_incr : Numeric value by which to increment the growth rate from the first value to the last value
-    # @return : Dataframe containing the mean squared error of all B6 mice and an exponenential model using all parameter values specified by the input
-    ##########
-    def all_b6_growth(self, g_range, g_incr):
-        errors = []
-        for group in ["Grp. A1 B6 (100% C1)", "Grp. A2 B6 (80% C1; 20% C11)", "Grp. A3 B6 (50% C1; 50% C11)", "Grp. A4 B6 (20% C1; 80% C11)", "Grp. A5 B6 (100% C11)"]:
-            for mid in self.growth_df[self.growth_df["group"] == group]["id"].unique():
-                curr_mouse = self.one_admix_nude_growth(g_range, g_incr,
-                                                self.growth_df[self.growth_df["id"] == mid][["day", "size"]].to_numpy().T,       
-                                                self.growth_df[self.growth_df["id"] == mid]["day"].max())
-                curr_mouse["group"] = group
-                curr_mouse["id"] = mid
-                errors += [curr_mouse[["group", "id", "g", "error"]]] # Reorder columns
-        errors = pd.concat(errors, ignore_index=True)
-        return errors
+            results += [self.nude_admix_group(group, g1_list, g11_list, m_list, k_list)]
+        results = pd.concat(results)
+        return results
 
-    ##########
-    # Get the mean squared error for the curve generated from the input parameters and a single nude admixture mouse
-    # @param init : List with three elements, first is the ratio of C1, second is the ratio of C11, third is the initial population size of the T cells. E.g. the output of of get_init()
-    # @param k_range : A list with two elements, first is the minimum value of k to try, second is the maximum value to try.
-    # @param k_incr : Numeric value by which to increment k from the first value to the last value
-    # @param m_range : A list with two elements, first is the minimum value of m to try, second is the maximum value to try.
-    # @param m_incr : Numeric value by which to increment m from the first value to the last value
-    # @param true_data : A numpy array with dimensions 2 by number of data points. true_data[0] should be the time over each measurement. true_data[1] should be the measurement.
-    # @param end_time : Last time.
-    # @param g1 : Growth rate of C1. If not provided, 'g1' from the config file is used.
-    # @param g11 : Growth rate of C11. If not provided, 'g1' from the config file is used.
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : Dataframe containing the mean squared error for the mouse defined by true_data and all parameter values specified by the input
-    ##########
-    def one_mouse_nude_admix(self, init, k_range, k_incr, m_range, m_incr, true_data, end_time, g1=None, g11=None, win_only=False):
-        if g1 == None: g1 = self.g1
-        if g11 == None: g11 = self.g11
-        k_list = [round(x, 3) for x in list(np.arange(k_range[0], k_range[1]+k_incr, k_incr))]
-        m_list = [round(x, 3) for x in list(np.arange(m_range[0], m_range[1]+k_incr, m_incr))] 
-        mouse_err = np.zeros((len(k_list)*len(m_list),4))
-        for i in range(0, len(k_list)):
-            for j in range(0, len(m_list)):
-                score, winner = self.get_error(init, g1, g11, k_list[i], m_list[j], 0, 0, 0, 1, true_data, end_time, win_only=win_only)
-                idx = i*len(m_list)+j
-                mouse_err[idx] = [k_list[i], m_list[j], score, winner]
-        error_df = pd.DataFrame(mouse_err, columns=["k", "m", "error", "winner"])
-        return error_df
-
-    ##########
-    # Get the mean squared error for all parameter combinations across all nude admixture mice.
-    # @param k_range : A list with two elements, first is the minimum value of k to try, second is the maximum value to try.
-    # @param k_incr : Numeric value by which to increment k from the first value to the last value
-    # @param m_range : A list with two elements, first is the minimum value of m to try, second is the maximum value to try.
-    # @param m_incr : Numeric value by which to increment m from the first value to the last value
-    # @param g1 : Growth rate of C1. If not provided, 'g1' from the config file is used.
-    # @param g11 : Growth rate of C11. If not provided, the 'g11' from the config file is used.
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : Dataframe containing the mean squared error for all nude admixture mice and all parameter values specified by the input
-    ##########
-    def all_mice_nude_admix(self, k_range, k_incr, m_range, m_incr, g1=None, g11=None, win_only=False):
-        if g1 == None: g1 = self.g1
-        if g11 == None: g11 = self.g11
-        errors = []
-        for group in ["Grp. B2 nude (80% C1; 20% C11)", "Grp. B3 nude (50% C1; 50% C11)", "Grp. B4 nude (20% C1; 80% C11)"]:
-            init = self.get_init(group)
-            for mid in self.growth_df[self.growth_df["group"] == group]["id"].unique():
-                print(mid, flush=True)
-                end_time = 100 if win_only else self.growth_df[self.growth_df["id"] == mid]["day"].max()
-                curr_mouse = self.one_mouse_nude_admix(init, k_range, k_incr, m_range, m_incr,
-                                                self.growth_df[self.growth_df["id"] == mid][["day", "size"]].to_numpy().T,      
-                                                end_time,
-                                                g1=g1, g11=g11, win_only=win_only)
-                curr_mouse["group"] = group
-                curr_mouse["id"] = mid
-                errors += [curr_mouse[["group", "id", "k", "m", "winner", "error"]]] # Reorder columns
-        errors = pd.concat(errors, ignore_index=True)
-        return errors
-
-    ##########
-    # Get the mean squared error for the curve generated from the input parameters and a single B6 mouse
-    # @param init : List with three elements, first is the ratio of C1, second is the ratio of C11, third is the initial population size of the T cells. E.g. the output of of get_init()
-    # @param m_range : A list with two elements, first is the minimum value of m to try, second is the maximum value to try.
-    # @param m_incr : Numeric value by which to increment m from the first value to the last value
-    # @param d_range : A list with two elements, first is the minimum value of d to try, second is the maximum value to try.
-    # @param d_incr : Numeric value by which to increment d from the first value to the last value
-    # @param a_range : A list with two elements, first is the minimum value of a to try, second is the maximum value to try.
-    # @param a_incr : Numeric value by which to increment a from the first value to the last value
-    # @param f_range : A list with two elements, first is the minimum value of f to try, second is the maximum value to try.
-    # @param f_incr : Numeric value by which to increment f from the first value to the last value
-    # @param l_range : A list with two elements, first is the minimum value of l to try, second is the maximum value to try.
-    # @param l_incr : Numeric value by which to increment l from the first value to the last value
-    # @param true_data : A numpy array with dimensions 2 by number of data points. true_data[0] should be the time over each measurement. true_data[1] should be the measurement.
-    # @param end_time : Last time.
-    # @param g1 : Growth rate of C1. If not provided, 'g1' from the config file is used.
-    # @param g11 : Growth rate of C11. If not provided, the 'g11' from the config file is used.
-    # @param km_eq : A list with two elements describing the intercept and coefficient of the equation k=xm+y ([intercept, coefficient]). If not provided, the intercept and slope in the Config file is used.
-    # @return : Dataframe containing the mean squared error for the mouse defined by true_data and all parameter values specified by the input
-    ##########
-    def one_mouse_b6(self, init, m_range, m_incr, d_range, d_incr, a_range, a_incr, f_range, f_incr, l_range, l_incr, true_data, end_time, g1=None, g11=None, km_eq=None):
-        print("g1:", g1)
-        print("g11:", g11)
-        if g1 == None: g1 = self.g1
-        if g11 == None: g11 = self.g11
-        if km_eq == None: km_eq = [self.km_intercept, self.km_slope]
-        m_list = list(np.arange(m_range[0], m_range[1]+m_incr, m_incr))
-        d_list = list(np.arange(d_range[0], d_range[1]+d_incr, d_incr))
-        a_list = list(np.arange(a_range[0], a_range[1]+a_incr, a_incr))   
-        f_list = list(np.arange(f_range[0], f_range[1]+f_incr, f_incr))
-        l_list = list(np.arange(l_range[0], l_range[1]+l_incr, l_incr))
-
-        mouse_err = np.zeros((len(m_list)*len(d_list)*len(a_list)*len(f_list)*len(l_list), 8))
-        for m in range(0, len(m_list)):
-            for i in range(0, len(d_list)):
-                for j in range(0, len(a_list)):
-                    for f in range(0, len(f_list)):
-                        for l in range(0, len(l_list)):
-                            k = km_eq[0] + km_eq[1]*m_list[m]
-                            score, winner = self.get_error(init, g1, g11, k, m_list[m], d_list[i], a_list[j], f_list[f], l_list[l], true_data, end_time)
-                            idx = m*(len(d_list)*len(a_list)*len(f_list)*len(l_list))+i*(len(a_list)*len(f_list)*len(l_list))+j*(len(f_list)*len(l_list))+f*len(l_list)+l
-                            mouse_err[idx] = [k, m_list[m], d_list[i], a_list[j], f_list[f], l_list[l], winner, score]
-        error_df = pd.DataFrame(mouse_err, columns=["k", "m", "d", "a", "f", "l", "winner", "error"])
-        return error_df
-
-    ##########
-    # Get the mean squared error for the curve generated from the input parameters and a all B6 mice
-    # @param km_eq : A list with two elements describing the intercept and coefficient of the equation k=xm+y ([intercept, coefficient])
-    # @param m_range : A list with two elements, first is the minimum value of m to try, second is the maximum value to try.
-    # @param m_incr : Numeric value by which to increment m from the first value to the last value
-    # @param d_range : A list with two elements, first is the minimum value of d to try, second is the maximum value to try.
-    # @param d_incr : Numeric value by which to increment d from the first value to the last value
-    # @param a_range : A list with two elements, first is the minimum value of a to try, second is the maximum value to try.
-    # @param a_incr : Numeric value by which to increment a from the first value to the last value
-    # @param f_range : A list with two elements, first is the minimum value of f to try, second is the maximum value to try.
-    # @param f_incr : Numeric value by which to increment f from the first value to the last value
-    # @param l_range : A list with two elements, first is the minimum value of l to try, second is the maximum value to try.
-    # @param l_incr : Numeric value by which to increment l from the first value to the last value
-    # @param g1 : Growth rate of C1. If not provided, 'g1' from the config file is used.
-    # @param g11 : Growth rate of C11. If not provided, the 'g11' from the config file is used.
-    # @param km_eq : A list with two elements describing the intercept and coefficient of the equation k=xm+y ([intercept, coefficient]). If not provided, the intercept and slope in the Config file is used.
-    # @return : Dataframe containing the mean squared error for all B6 mice and all parameter values specified by the input
-    ##########
-    def all_mice_b6(self, m_range, m_incr, d_range, d_incr, a_range, a_incr, f_range, f_incr, l_range, l_incr, g1=None, g11=None, km_eq=None):
-        if g1 == None: g1 = self.g1
-        if g11 == None: g11 = self.g11
-        if km_eq == None: km_eq = [self.km_intercept, self.km_slope]
-        errors = []
-        for group in ["Grp. A1 B6 (100% C1)", "Grp. A2 B6 (80% C1; 20% C11)", "Grp. A3 B6 (50% C1; 50% C11)", "Grp. A4 B6 (20% C1; 80% C11)"]:            
-            print(group, flush=True)
-            init = self.get_init(group)
-            for mid in self.growth_df[self.growth_df["group"] == group]["id"].unique():
-                print(mid, flush=True)
-                curr_mouse = self.one_mouse_b6(init, m_range, m_incr, d_range, d_incr, a_range, a_incr, f_range, f_incr, l_range, l_incr,
-                                                self.growth_df[self.growth_df["id"] == mid][["day", "size"]].to_numpy().T,       
-                                                self.growth_df[self.growth_df["id"] == mid]["day"].max(),
-                                                g1=g1, g11=g11, km_eq=km_eq)
-                curr_mouse["group"] = group
-                curr_mouse["id"] = mid
-                errors += [curr_mouse[["group", "id", "k", "m", "d", "a", "f", "l", "winner", "error"]]] # Reorder columns
-        errors = pd.concat(errors, ignore_index=True)
-        return errors
+    # For any group in B6 mice, and parameters passed, 
+    # get the results of fitting the simulation to the the data.
+    # @param group The name of the group to evaluate
+    # @param gkm_pairs The list of C1 growth rate, C11 growth rate, m, and k tuples to evaluate
+    # @param c_list The list of c values to evaluate
+    # @param a_list The list of a values to evaluate
+    # @param f_list The list of f values to evaluate
+    # @param b_list The list of b values to evaluate
+    # @param l_list The list of l values to evaluate
+    # @return A pandas dataframe with the results of each parameter evaluation for each mouse
+    def b6_group(self, group, gkm_pairs, c_list, a_list, f_list, b_list, l_list):
+        group_df = self.growth_df[self.growth_df["group"] == group]
+        results = [[0]*10]*(len(gkm_pairs)*len(c_list)*len(a_list)*len(f_list)*len(b_list)*len(l_list)*len(group_df["id"].unique()))
+        idx=0
+        if ("A1" in group or "A2" in group or "1C" in group or "2C" in group):
+            should_win = 0 # C1
+        else: 
+            should_win = 1 # C11
+        for params in product(gkm_pairs, c_list, a_list, f_list, b_list, l_list):
+            eq_params = [params[0][0], params[0][1], params[0][2], params[0][3], *params[1:]]            
+            for mid in group_df["id"].unique():
+                init = self.get_init(group, mid)
+                end_time = max(group_df[group_df["id"]==mid]["day"])
+                sol = pyxfunc.run(init[0], init[1], init[2], 7.0, end_time, self.delay, 
+                                    self.cutoff_0_raw, self.cutoff_0_percent, init[2], *eq_params)
+                idxs = [(d-7)*(1/self.dt) for d in self.growth_df[self.growth_df["id"] == mid]["day"].tolist()]
+                sizes = self.growth_df[self.growth_df["id"] == mid]["size"].tolist()
+                err_win = pyxfunc.get_error(idxs, sizes, sol, should_win, self.max_loser_subline_percent)
+                results[idx] = [group, mid, params[0][0], params[0][1], params[0][2], params[0][3], *params[1:], err_win[0], err_win[1]]
+                idx += 1
+        results = pd.DataFrame(results, columns=["group", "id", "g1", "g11", "m", "k", "c", "a", "f", "b", "l", "error", "winner"])
+        return results  
 
 
-    ##########
-    # Generate an exponential curve with the given parameters.
-    # @param g : Growth rate of exponential curve to generate
-    # @param end_time : Last time
-    # @return : List containing in index 0 the list of sizes for each time point and in index 1 each time point
-    ##########
-    def run_exponential(self, g, end_time):
-        c = 1
-        time = 0
-        sol_c = [c]
-        sol_time = [time]
-        while time < end_time:
-            c += g*c*self.dt
-            time += self.dt
-            sol_c.append(c)
-            sol_time.append(time)
-        return [np.asarray(sol_c), np.asarray(sol_time)]
-
-
-    ##########
-    # Run the model before the T cell population begins to be recruited.
-    # @param init : List with three elements, first is the ratio of C1, second is the ratio of C11, third is the initial population size of the T cells. E.g. the output of of get_init()
-    # @param g1 : Growth rate of C1
-    # @param g11 : Growth rate of C11
-    # @param k : Impact of C11 on C1
-    # @param m : Impact of C1 on C11
-    # @param d : Impact of T cells on C1
-    # @param end_time : Last time
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : List containing in index 0 the list of sizes for each time point for C1, 
-    #               in index 1 the list of sizes at each time point for C11, 
-    #               in index 2 the list of sizes at each time point for the T cells,
-    #               and in index 3 the list of time points for the time period before 
-    #               the T cells start proliferating
-    ##########
-    def run_before_t(self, init, g1, g11, k, m, d, end_time, win_only=False):
-        c1 = init[0]
-        c11 = init[1]
-        tcell = init[2]
-        time = 0
-        sol_time = [time]
-        sol_c1 = [c1]
-        sol_c11 = [c11]
-        sol_tcell = [tcell]
-        while (c1 > 0 or c11 > 0) and (c1+c11 > 0.01) and time < end_time:
-            if self.t_incr_size and c1+c11 >= self.t_incr_size: break
-            c1 = c1 + ((g1*c1) + (k*c1*c11) + (-d*c1*tcell))*self.dt
-            c11 = c11 + ((g11*c11) + (m*c11*c1))*self.dt
-            if c1 <= self.cutoff_0 or c1/(c1+c11)<0.001: c1 = 0
-            if c11 <= self.cutoff_0 or c11/(c1+c11)<0.001: c11 = 0
-            if win_only and c1 >= 100: c1 = 100
-            if win_only and c11 >= 100: c11 = 100
-            time = time + self.dt
-            sol_c1.append(c1)
-            sol_c11.append(c11)
-            sol_tcell.append(tcell)
-            sol_time.append(time)
-        return [np.asarray(sol_c1), np.asarray(sol_c11), np.asarray(sol_tcell), np.asarray(sol_time)]
-
-
-
-    ##########
-    # Run the model for the time period that T cells are being recruited.
-    # @param sol : Returned lists from run_before_t
-    # @param g1 : Growth rate of C1
-    # @param g11 : Growth rate of C11
-    # @param k : Impact of C11 on C1
-    # @param m : Impact of C1 on C11
-    # @param d : Impact of T cells on C1
-    # @param a : Impact of C1 on T cells (recruitment rate)
-    # @param l : Limiting factor on T cell recruitment
-    # @param f : T cell death/exhaustion rate
-    # @param end_time : Last time
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : List containing in index 0 the list of sizes for each time point for C1, 
-    #               in index 1 the list of sizes at each time point for C11, 
-    #               in index 2 the list of sizes at each time point for the T cells,
-    #               and in index 3 the list of time points for the entire time period of the
-    #               curve generation from time 0
-    ##########
-    def run_incr_t(self, sol, g1, g11, k, m, d, a, f, l, end_time, win_only=False):
-        c1 = sol[0][-1]
-        c11 = sol[1][-1]
-        tcell = sol[2][-1]
-        time = sol[3][-1]
-        while c1+c11 < 7.25 and (c1 > 0 or c11 > 0) and (c1+c11 > 0.01) and time < end_time:
-            tcell_next = tcell + (a/(l+c1)*c1*tcell - f*tcell)*self.dt
-            c1 = c1 + ((g1*c1) + (k*c1*c11) + (-d*c1*tcell))*self.dt
-            c11 = c11 + ((g11*c11) + (m*c11*c1))*self.dt
-            tcell = tcell_next
-            if c1 <= self.cutoff_0 or c1/(c1+c11)<0.001: c1 = 0
-            if c11 <= self.cutoff_0 or c11/(c1+c11)<0.001: c11 = 0
-            if win_only and c1 >= 100: c1 = 100
-            if win_only and c11 >= 100: c11 = 100
-            if tcell <= sol[2][0]: tcell = sol[2][0]
-            time = time + self.dt
-            sol[0] = np.append(sol[0], [c1])
-            sol[1] = np.append(sol[1], [c11])
-            sol[2] = np.append(sol[2], [tcell])
-            sol[3] = np.append(sol[3], [time])
-        return sol
-
-
-    
-    ##########
-    # Run the model for the time period while the T fells decrese.
-    # @param sol : Returned lists from run_incr_t 
-    # @param g1 : Growth rate of C1
-    # @param g11 : Growth rate of C11
-    # @param k : Impact of C11 on C1
-    # @param m : Impact of C1 on C11
-    # @param d : Impact of T cells on C1
-    # @param end_time : Last time
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : List containing in index 0 the list of sizes for each time point for C1, 
-    #               in index 1 the list of sizes at each time point for C11, 
-    #               in index 2 the list of sizes at each time point for the T cells,
-    #               and in index 3 the list of time points for the entire time period of the
-    #               curve generation from time 0
-    ##########
-    def run_dec_t(self, sol, g1, g11, k, m, d, a, f, l, end_time, win_only=False):
-        c1 = sol[0][-1]
-        c11 = sol[1][-1]
-        tcell = sol[2][-1]
-        time = sol[3][-1]
-        while time < end_time:
-            tcell_next = tcell - (f*tcell)*self.dt
-            c1 = c1 + ((g1*c1) + (k*c1*c11) + (-d*c1*tcell))*self.dt
-            c11 = c11 + ((g11*c11) + (m*c11*c1))*self.dt
-            tcell = tcell_next
-            if c1 <= self.cutoff_0 or c1/(c1+c11)<0.001: c1 = 0
-            if c11 <= self.cutoff_0 or c11/(c1+c11)<0.001: c11 = 0
-            if win_only and c1 >= 100: c1 = 100
-            if win_only and c11 >= 100: c11 = 100
-            if tcell <= sol[2][0]: tcell = sol[2][0]
-            time = time + self.dt
-            sol[0] = np.append(sol[0], [c1])
-            sol[1] = np.append(sol[1], [c11])
-            sol[2] = np.append(sol[2], [tcell])
-            sol[3] = np.append(sol[3], [time])
-        return sol
-
-
-    ##########
-    # Calculate the error between the true data (a single mouse) and a curve generated under the given parameters
-    # @param init : List with three elements, first is the ratio of C1, second is the ratio of C11, third is the initial population size of the T cells. E.g. the output of of get_init()
-    # @param g1 : Growth rate of C1
-    # @param g11 : Growth rate of C11
-    # @param k : Impact of C11 on C1
-    # @param m : Impact of C1 on C11
-    # @param d : Impact of T cells on C1
-    # @param a : Impact of C1 on T cells (recruitment rate)
-    # @param f : T cell death/exhaustion rate
-    # @param l : Limiting factor on T cell recruitment
-    # @param days_sizes : List with index 0 containing the list of days of measurements and with index 1 containing the list of sizes for those days
-    # @param end_time : Last time
-    # @param win_only : Whether or not to focus on finding the winning subclone only (this will make errors incorrect). 
-    # @return : Error (either MSE or R squared) between the true data and the generated curve,
-    #           which subline wins (0 = C1, 1 = C11, both eliminated = 2)
-    ##########
-    def get_error(self, init, g1, g11, k, m, d, a, f, l, days_sizes, end_time, win_only=False):
-        # Run the simulation
-        sol = self.run_before_t(init, g1, g11, k, m, d, end_time, win_only=win_only)
-        sol = self.run_incr_t(sol, g1, g11, k, m, d, a, f, l, end_time, win_only=win_only)
-        sol = self.run_dec_t(sol, g1, g11, k, m, d, a, f, l, end_time, win_only=win_only) 
-        # Calculate the tumor size and remove values where the size is too large to calculate
-        res = sol[0]+sol[1]
-        true_idxs = [int(i/self.dt) for i in days_sizes[0]]
-        res = res[true_idxs]
-        true_curve = np.asarray(days_sizes[1])
-        # Calculate error
-        if self.error_type == "R2":
-            error = r2_score(true_curve, res)
-        else:
-            error = mean_squared_error(true_curve, res)
-
-        # Determine the subline winner
-        x = 100 if win_only else np.inf
-        if sol[0][-1] == x and sol[1][-1] == x: winner = 2
-        elif sol[0][-1] > self.cutoff_0 and sol[0][-1] > sol[1][-1]: winner = 0 # c1
-        elif sol[1][-1] > self.cutoff_0 and sol[1][-1] > sol[0][-1]: winner = 1 # c11
-        else: winner = 2
-
-        # If the wrong subline wins, set the error to +/-infinity
-        # We should always have one of the sublines winning, so the winner should never be 2.
-        if winner == 2:
-            if self.error_type == "R2": error = -np.inf
-            else: error = np.inf
-        # For nude mice, C1 should win all experiments except for pure C11.
-        elif init[2] == 0:
-            if (init[1] < 1 and winner != 0):
-                if self.error_type == "R2": error = -np.inf
-                else: error = np.inf
-        # For B6 mice, C1 should win only when it has 80% or more.
-        else:
-            if (init[0] >= 0.8 and winner != 0) or (init[0] < 0.8 and winner != 1): 
-                if self.error_type == "R2": error = -np.inf
-                else: error = np.inf
-        # perc_c1 = sol[0][-1] / (sol[0][-1]+sol[1][-1])
-        # perc_c1 = 1
-        return error, winner#, perc_c1, sol[0][-1], sol[1][-1]
-
-    ##########
-    # Calculate the error between an exponential curve with the given parameters and the true data
-    # @param g : Growth rate of the exponential curve to generate
-    # @param days_sizes : List with index 0 containing the list of days of measurements and with index 1 containing the list of sizes for those days
-    # @param end_time : Last time
-    # @return : Error (either MSE or R squared) between the true data and the generated curve
-    ##########
-    def get_error_exponential(self, g, days_sizes, end_time):
-        # Run the simulation
-        sol = self.run_exponential(g, end_time)
-        # Calculate the tumor size and remove values where the size is too large to calculate
-        true_idxs = [int(i/self.dt) for i in days_sizes[0]]
-        res = sol[0]
-        res = res[true_idxs]
-        true_curve = np.asarray(days_sizes[1])
-        # Calculate error
-        if self.error_type == "R2":
-            error = r2_score(true_curve, res)
-        else:
-            error = mean_squared_error(true_curve, res)
-        return error
-    
+    # Evaluate the passed growth rates on B6 mice.
+    # @param gkm_pairs The list of C1 growth rate, C11 growth rate, m, and k tuples to evaluate
+    # @param c_list The list of c values to evaluate
+    # @param a_list The list of a values to evaluate
+    # @param f_list The list of f values to evaluate
+    # @param b_list The list of b values to evaluate
+    # @param l_list The list of l values to evaluate
+    # @return A pandas dataframe with the results of evaluating the parameter combinations.
+    def b6_all(self, gkm_pairs, c_list, a_list, f_list, b_list, l_list):
+        results = []
+        for group in ["Grp. A1 B6 (100% C1)", "Grp. A2 B6 (80% C1; 20% C11)", "Grp. A3 B6 (50% C1; 50% C11)", "Grp. A4 B6 (20% C1; 80% C11)", "Grp. A5 B6 (100% C11)", 
+                      "1C", "2C", "3C", "4C", "5C"]:
+            results += [self.b6_group(group, gkm_pairs, c_list, a_list, f_list, b_list, l_list)]
+        results = pd.concat(results)
+        return results

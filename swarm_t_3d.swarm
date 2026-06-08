@@ -1,0 +1,14 @@
+#SWARM --gb-per-process 16
+#SWARM --gres lscratch:10
+#SWARM --time 24:00:00
+#SWARM --logdir output/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.1 --dinc 0.1 --dmax 0.1 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.2 --dinc 0.2 --dmax 0.2 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.3 --dinc 0.3 --dmax 0.3 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.4 --dinc 0.4 --dmax 0.4 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.5 --dinc 0.5 --dmax 0.5 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.6 --dinc 0.6 --dmax 0.6 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.7 --dinc 0.7 --dmax 0.7 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.8 --dinc 0.8 --dmax 0.8 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 0.9 --dinc 0.9 --dmax 0.9 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
+python runner_t_3d.py -c config_files/config_t.json -b bests/t_1.csv --dmin 1.0 --dinc 1.0 --dmax 1.0 --amin 0 --ainc 0.2 --amax 2.0 --fmin 0 --finc 0.2 --fmax 2.0 -s /data/hirschmg/tumor_dynamics/2026/final_results/3d_1/
