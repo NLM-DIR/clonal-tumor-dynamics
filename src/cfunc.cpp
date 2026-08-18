@@ -43,6 +43,41 @@ vector<double> _one_step(double c1, double c11, double tcell, bool delay_flag, d
     return {c1_next, c11_next, tcell_next};
 }
 
+/*
+    Take one step in the function with interaction between C11 and T cells
+    @param double c1 The size of subclone C1
+    @param double c11 The size of subclone C11
+    @param double tcell The size of the T cell population
+    @param bool delay_flag Whether or not the T cell population is changing. 
+                           True means the T cell population will not change. 
+                           False means the T cell population will change following the dynamics.
+    @param double end_time The end time of the simulation
+    @param init_tcell The initial T cell population size
+    @param double g1 The growth rate of C1
+    @param double g11 The growth rate of C11
+    @param double m Effect of C11 on C1
+    @param double k Effect of C1 on C11
+    @param double c Effect of T cells on C1
+    @param double a Recruitment rate of T cells by C1
+    @param double f Turnover rate of T cells
+    @param double b The suppression of T cells by C1
+    @param double l Michelis-Menten parameter
+    @param double h Effect of T cells on C11
+*/ 
+vector<double> _one_step_it(double c1, double c11, double tcell, bool delay_flag, double end_time, double init_tcell,
+                    double g1, double g11, double m, double k, double c, double a, double f, double b, double l, double h) {
+    double s = init_tcell*f;
+    double tcell_next;
+    if (delay_flag) {
+        tcell_next = tcell;
+    }
+    else {
+        tcell_next = tcell + (s+ (a/(l+sqrt(c1)))*sqrt(c1)*tcell - b*sqrt(c1)*tcell - f*tcell)*0.01;
+    }
+    double c1_next = c1 + (g1*c1 + k*sqrt(c1)*sqrt(c11) - c*c1*tcell)*0.01;
+    double c11_next = c11 + (g11*c11 + m*sqrt(c11)*sqrt(c1) - (h*c)*c11*tcell)*0.01;
+    return {c1_next, c11_next, tcell_next};
+}
 
 /*
     Run the simulation
@@ -86,6 +121,71 @@ vector<vector<double>> _run(double init_c1, double init_c11, double init_tcell, 
             delay_flag = false;
         }
         curr_results = _one_step(results.at(0).at(idx), results.at(1).at(idx), results.at(2).at(idx), delay_flag, end_time, base_tcell, g1, g11, m, k, c, a, f, b, l);
+
+        if (curr_results[0] <= cutoff_0_raw || curr_results[0]/(curr_results[0]+curr_results[1]) <= cutoff_0_percent) {
+            curr_results[0] = 0;
+        }
+        if (curr_results[1] <= cutoff_0_raw || curr_results[1]/(curr_results[0]+curr_results[1]) <= cutoff_0_percent) {
+            curr_results[1] = 0;
+        }
+        if (curr_results[2] <= base_tcell) {
+            curr_results[2] = base_tcell;
+        }
+
+        time = time + 0.01;
+        idx = idx + 1;
+
+        results.at(0).push_back(curr_results.at(0));
+        results.at(1).push_back(curr_results.at(1));
+        results.at(2).push_back(curr_results.at(2));
+        results.at(3).push_back(time);
+    }
+    return results;
+}
+
+/*
+    Run the simulation with the interaction between C11 and T cells
+    @param double init_c1 The initial size of subclone C1
+    @param double init_c11 The initial size of subclone C11
+    @param double init_tcell The inital size of the T cell population
+    @param double start_time The start day of the simulation
+    @param double end_time The end day of the simulation
+    @param double delay The day that the T cell population begins to change
+    @param double cutoff_0_raw The raw size of the subclone population at which to set the population size to 0
+    @param double cutoff_0_percentage The percentage of the subclone in the tumor population at which to set the population size to 0
+    @param double base_tcell The minimum size of the T cell population
+    @param double g1 The growth rate of C1
+    @param double g11 The growth rate of C11
+    @param double m Effect of C11 on C1
+    @param double k Effect of C1 on C11
+    @param double c Effect of T cells on C1
+    @param double a Recruitment rate of T cells by C1
+    @param double f Turnover rate of T cells
+    @param double b The suppression of T cells by C1
+    @param double l Michelis-Menten parameter
+    @param double h Effect of T cells on C11
+    @return vector<vector<double>> results Vectors of the sizes of the populations
+                                           results[0] is the size of C1
+                                           results[1] is the size of C11
+                                           results[2] is the size of the T cell population
+                                           results[3] is the time values
+*/ 
+vector<vector<double>> _run_it(double init_c1, double init_c11, double init_tcell, double start_time, double end_time, 
+                           double delay, double cutoff_0_raw, double cutoff_0_percent, double base_tcell,
+                           double g1, double g11, double m, double k, double c, double a, double f, double b, double l, double h) {
+    double time = start_time;
+    bool delay_flag = true;
+
+    vector<vector<double>> results = {vector<double>{init_c1}, vector<double>{init_c11}, vector<double>{init_tcell}, vector<double>{time}}; 
+    int idx = 0;
+
+    while (time < end_time) {
+        vector<double> curr_results;
+
+        if (time >= delay) {
+            delay_flag = false;
+        }
+        curr_results = _one_step_it(results.at(0).at(idx), results.at(1).at(idx), results.at(2).at(idx), delay_flag, end_time, base_tcell, g1, g11, m, k, c, a, f, b, l, h);
 
         if (curr_results[0] <= cutoff_0_raw || curr_results[0]/(curr_results[0]+curr_results[1]) <= cutoff_0_percent) {
             curr_results[0] = 0;

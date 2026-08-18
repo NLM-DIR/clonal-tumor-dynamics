@@ -162,6 +162,40 @@ class Estimator():
         results = pd.DataFrame(results, columns=["group", "id", "g1", "g11", "m", "k", "c", "a", "f", "b", "l", "error", "winner"])
         return results  
 
+    # For any group in B6 mice, and parameters passed, 
+    # get the results of fitting the simulation including 
+    # the invasive-T cell interaction to the the data.
+    # @param group The name of the group to evaluate
+    # @param gkm_pairs The list of C1 growth rate, C11 growth rate, m, and k tuples to evaluate
+    # @param c_list The list of c values to evaluate
+    # @param a_list The list of a values to evaluate
+    # @param f_list The list of f values to evaluate
+    # @param b_list The list of b values to evaluate
+    # @param l_list The list of l values to evaluate
+    # @param h_list The list of h values to evaluate
+    # @return A pandas dataframe with the results of each parameter evaluation for each mouse
+    def b6_group_it(self, group, gkm_pairs, c_list, a_list, f_list, b_list, l_list, h_list):
+        group_df = self.growth_df[self.growth_df["group"] == group]
+        results = [[0]*10]*(len(gkm_pairs)*len(c_list)*len(a_list)*len(f_list)*len(b_list)*len(l_list)*len(h_list)*len(group_df["id"].unique()))
+        idx=0
+        if ("A1" in group or "A2" in group or "1C" in group or "2C" in group):
+            should_win = 0 # C1
+        else: 
+            should_win = 1 # C11
+        for params in product(gkm_pairs, c_list, a_list, f_list, b_list, l_list, h_list):
+            eq_params = [params[0][0], params[0][1], params[0][2], params[0][3], *params[1:]]            
+            for mid in group_df["id"].unique():
+                init = self.get_init(group, mid)
+                end_time = max(group_df[group_df["id"]==mid]["day"])
+                sol = pyxfunc.run_it(init[0], init[1], init[2], 7.0, end_time, self.delay, 
+                                    self.cutoff_0_raw, self.cutoff_0_percent, init[2], *eq_params)
+                idxs = [(d-7)*(1/self.dt) for d in self.growth_df[self.growth_df["id"] == mid]["day"].tolist()]
+                sizes = self.growth_df[self.growth_df["id"] == mid]["size"].tolist()
+                err_win = pyxfunc.get_error(idxs, sizes, sol, should_win, self.max_loser_subline_percent)
+                results[idx] = [group, mid, params[0][0], params[0][1], params[0][2], params[0][3], *params[1:], err_win[0], err_win[1]]
+                idx += 1
+        results = pd.DataFrame(results, columns=["group", "id", "g1", "g11", "m", "k", "c", "a", "f", "b", "l", "h", "error", "winner"])
+        return results 
 
     # Evaluate the passed growth rates on B6 mice.
     # @param gkm_pairs The list of C1 growth rate, C11 growth rate, m, and k tuples to evaluate
@@ -176,5 +210,22 @@ class Estimator():
         for group in ["Grp. A1 B6 (100% C1)", "Grp. A2 B6 (80% C1; 20% C11)", "Grp. A3 B6 (50% C1; 50% C11)", "Grp. A4 B6 (20% C1; 80% C11)", "Grp. A5 B6 (100% C11)", 
                       "1C", "2C", "3C", "4C", "5C"]:
             results += [self.b6_group(group, gkm_pairs, c_list, a_list, f_list, b_list, l_list)]
+        results = pd.concat(results)
+        return results
+
+    # Evaluate the passed growth rates on B6 mice on the model with invasive-T cell interaction.
+    # @param gkm_pairs The list of C1 growth rate, C11 growth rate, m, and k tuples to evaluate
+    # @param c_list The list of c values to evaluate
+    # @param a_list The list of a values to evaluate
+    # @param f_list The list of f values to evaluate
+    # @param b_list The list of b values to evaluate
+    # @param l_list The list of l values to evaluate
+    # @param h_list The list of h values to evaluate
+    # @return A pandas dataframe with the results of evaluating the parameter combinations.
+    def b6_all_it(self, gkm_pairs, c_list, a_list, f_list, b_list, l_list, h_list):
+        results = []
+        for group in ["Grp. A1 B6 (100% C1)", "Grp. A2 B6 (80% C1; 20% C11)", "Grp. A3 B6 (50% C1; 50% C11)", "Grp. A4 B6 (20% C1; 80% C11)", "Grp. A5 B6 (100% C11)", 
+                      "1C", "2C", "3C", "4C", "5C"]:
+            results += [self.b6_group_it(group, gkm_pairs, c_list, a_list, f_list, b_list, l_list, h_list)]
         results = pd.concat(results)
         return results
