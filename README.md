@@ -65,3 +65,4 @@ In order to analyze the results of the grid search and generate their respective
 ### Get other results
 
 - ``get_percent_decrease.ipynb`` calculates the percentage decrease between the growth rates of the nude immunocompromised and B6 immunocompetent mice.
+- ``stability_analysis.nb`` is a Mathematica notebook showing that the steady states of the system are unstable.
